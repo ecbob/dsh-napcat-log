@@ -1,0 +1,25 @@
+# dsh-napcat-log 的 bundle 默认层。
+# 注册 Cordis 插件行 `dsh-napcat-log`：把 NapCat（QQ 机器人框架）的运行日志与登录二维码桥进 DSH
+# —— 一只工具 `napcat_log`（status / read / qr / start / stop / restart）+ 一份按需加载的 SKILL.md。
+# 默认值已编进插件，这里写空对象即可。
+#
+# 想改就在 profile 自己的 cordis.patch.yml 里按同一 id 覆盖（profile 层后于 bundle 层，覆盖是整份换 config）：
+#   - id: dsh-napcat-log
+#     name: 'dsh-napcat-log'
+#     config:
+#       napcatDir: 'D:/some/other/dir/NapCatQQ'   # NapCat 装在哪；空 = 按 环境变量 NAPCAT_DIR → 常见位置探测 的顺序找
+#       webuiPort: 6099                            # 判"在不在跑"用的端口（NapCat 自己的 config/webui.json 若给了别的值以它为准）
+#       webuiHost: '127.0.0.1'                     # 探端口用的主机名（NapCat 那边常写 '::'，探测会自动退回 127.0.0.1）
+#       defaultMode: 'log'                         # start 不带 mode 时用哪条：log（重定向进 logs/napcat-out.txt）| console（开可见窗口）
+#       startProbeMs: 6000                         # 起之后再等这么久看端口通不通（0 = 纯脱管立刻返回）
+#       stopWaitMs: 4000                           # 停之后再等这么久看端口释放没有（0 = 不等）
+#       probeMs: 900                               # 单次 TCP 探测超时（100-5000）
+#       maxBytes: 200000                           # 尾读上限（2000-2000000）
+#       snapshotName: 'qrcode-latest.png'          # qr 动作把当前登录码复制成 logs/ 下这个名字
+#       logLevel: info                             # quiet | info | debug
+#   同样这些也能写在插件家目录的 config.json 里（用的时候现读，改完不必重启；
+#   优先级：config.json > 这里的 patch config > 内置默认）。
+- insert:
+    - id: dsh-napcat-log
+      name: 'dsh-napcat-log'
+      config: {}
