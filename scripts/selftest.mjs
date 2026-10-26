@@ -234,6 +234,12 @@ ok('status：WebUI token 取自 NapCat 自己的 config/webui.json（权威）�
 ok('status：当前二维码给出 ageSec / 剩余秒 / 过期时刻，并把图作为附件回（附件走宿主 saveImages）', st.qrcode.exists === true && st.qrcode.ageSec >= 29 && st.qrcode.expiresInSec <= 91 && typeof st.image === 'string' && savedImages.length >= 1 && savedImages[0].mediaType === 'image/png', JSON.stringify({ q: st.qrcode, image: st.image, saved: savedImages.length }))
 ok('status：四个启动脚本存在性都报出来，且报的正是我给它的那个端口（不是写死 6099）', Object.keys(st.napcat.launchers).length >= 4 && st.port === toolPort, JSON.stringify({ keys: Object.keys(st.napcat.launchers), port: st.port }))
 ok('status：最后三行日志被搬出来（窗口版没文件时也不炸，回空数组）', Array.isArray(st.lastLogLines), JSON.stringify(st.lastLogLines))
+fs.appendFileSync(bigLog, napLogStamp(new Date()) + ' \u001b[32minfo\u001b[39m [NapCat] [Test] 为了测快照刷新追加的一行\r\n', 'utf8')
+const stRefresh = await run({ action: 'status' }, ex)
+const snapAfter = (() => { try { return JSON.parse(fs.readFileSync(path.join(home, 'status.json'), 'utf8')) } catch (e) { return { err: String(e?.code || e) } } })()
+ok('status 每问一次就把 status.json 刷一份（文档承诺"每问即刷"；本机实机测试发现 0.1.0/0.1.1 只在挂载时写、问完文件还停在旧内容 ⇒ 这条钉住别回退）', !!(snapAfter.logFileStatus && stRefresh.logFileStatus) && snapAfter.logFileStatus.bytes === stRefresh.logFileStatus.bytes && snapAfter.at === stRefresh.at && stRefresh.logFileStatus.bytes > st.logFileStatus.bytes, JSON.stringify({ snap: snapAfter.logFileStatus && snapAfter.logFileStatus.bytes, res: stRefresh.logFileStatus && stRefresh.logFileStatus.bytes, before: st.logFileStatus && st.logFileStatus.bytes, err: snapAfter.err }))
+const rd2b = await run({ action: 'read', lines: 3 })
+ok('read：新追加的行也照旧交干净文本（ANSI 剥掉、行尾 \\r 不留，内容照得到）', rd2b.ok && !rd2b.text.includes('\u001b') && !/\r/.test(rd2b.text) && /为了测快照刷新/.test(rd2b.text), JSON.stringify({ tail: rd2b.text.slice(-40) }))
 
 /* 12. read */
 const rd = await run({ action: 'read', lines: 5 })

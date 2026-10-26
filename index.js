@@ -401,7 +401,7 @@ export function apply(ctx, config = {}) {
     }
   }
   const doStatus = async (c, L, exec) => {
-    const body = statusBody()
+    const body = writeStatusSnapshot()      // 每次 status 都顺手刷一份快照（文档承诺的就是这个：判现场不依赖 HTTP，问一次更新一次）
     const w = body.webui
     const listening = await __portOpen(w.probeHost, w.port, c.probeMs)
     const lastLines = (() => { const r = __readTextTail(L.logFile, 8000, 'auto'); if (!r.ok) return []; return __filterLines(r.text, { raw: false, lines: 3, now: new Date() }).text.split('\n').filter(Boolean) })()
