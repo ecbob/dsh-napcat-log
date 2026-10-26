@@ -150,6 +150,12 @@ ok('sinceMin 按行首时间戳筛"最近 N 分钟"（NapCat 的时间戳没有�
 const f6 = M.__filterLines(['keep me', 'x'.repeat(3000), 'last'].join('\n'), { lines: 2, now })
 ok('lines 只回最后 N 行并标出被截（capped）', f6.count === 2 && f6.capped === true && f6.text.endsWith('last'), JSON.stringify({ count: f6.count, capped: f6.capped, tail: f6.text.slice(-20) }))
 
+const fAnsi = M.__filterLines('\u001b[32minfo\u001b[39m 第一行\n\u001b[31merror\u001b[39m 第二行\nplain', { lines: 100, now: new Date() })
+ok('ANSI 颜色码总是先剥掉（本机实测 NapCat 日志里全是 \u001b[32m 这类码：不剥会把 filter 的正则和给人看的文本一起弄脏）', fAnsi.strippedAnsiLines === 2 && !fAnsi.text.includes('\u001b') && fAnsi.text.includes('info 第一行'), JSON.stringify({ n: fAnsi.strippedAnsiLines, head: fAnsi.text.slice(0, 12) }))
+const fAnsiRaw = M.__filterLines('\u001b[33mwarn\u001b[39m 一行\n\n\n空行占位', { raw: true, lines: 10, now: new Date() })
+ok('raw:true 也不留 ANSI（raw 只管框线与连续空行，控制码不是内容）', !fAnsiRaw.text.includes('\u001b') && fAnsiRaw.strippedAnsiLines === 1, JSON.stringify(fAnsiRaw.text))
+ok('剥完 ANSI 再筛：filter 写 "info" 就该命中带颜色的那行（不剥就匹配不到，因为控制码插在词前面）', M.__filterLines('\u001b[32minfo\u001b[39m x', { filter: 'info', lines: 5, now: new Date() }).count === 1, '—')
+
 /* ── 7. 行首时间戳解析 ── */
 const y1 = M.__lineTime('10-27 06:47:51 [info] x', new Date(Date.parse('2027-01-03T00:00:00')))
 ok('跨年时不未来的行退到上一年（1 月 3 日看到 10-27 的行 ⇒ 去年的 10-27，按本地时区解）', y1 === Date.parse('2026-10-27T06:47:51'), new Date(y1).toISOString())
@@ -189,6 +195,7 @@ await sleep(4200)
 const toolPort = await freePort()
 // 让假 NapCat 的 webui.json 报这个空出来的端口：判"在不在跑"以 NapCat 自己的配置为准 ⇒ 本机真在跑的 6099 那份不会混进来
 fs.writeFileSync(path.join(N.app, 'config', 'webui.json'), JSON.stringify({ host: '::', port: toolPort, token: 'a800943cd602', loginRate: 10, autoLoginAccount: '' }, null, 4), 'utf8')
+fs.appendFileSync(bigLog, napLogStamp(new Date()) + ' \u001b[32minfo\u001b[39m [NapCat] [Core] 现场追加的带颜色码的一行\r\n' + napLogStamp(new Date()) + ' \u001b[33mwarn\u001b[39m 二维码已保存到 fake/path\r\n', 'utf8')   // 本机实测：NapCat 输出带 chalk 码且是 CRLF
 process.chdir(tmp)
 const registered = [], skillsProviders = [], disposers = []
 const savedImages = []
@@ -207,7 +214,7 @@ const fakeCtx = {
 M.apply(fakeCtx, { webuiPort: toolPort, startProbeMs: 300, stopWaitMs: 300, probeMs: 300 })
 ok('apply() 只注册一只工具，名字是 napcat_log（形态就是"工具 + 说明书"，不铺一堆工具）', registered.length === 1 && registered[0].name === 'napcat_log', JSON.stringify(registered.map((r) => r.name)))
 const def = registered[0]
-ok('参数 schema 过得了宿主严格校验：action 必填、additionalProperties 明确给了 false、每个 object 节点都不漏 additionalProperties', def.parameters.type === 'object' && def.parameters.additionalProperties === false && JSON.stringify(def.parameters.required) === JSON.stringify(['action']) && Object.keys(def.parameters.properties).length === 9, JSON.stringify({ req: def.parameters.required, props: Object.keys(def.parameters.properties) }))
+ok('参数 schema 过得了宿主严格校验：action 必填、additionalProperties 明确给了 false、十个参数属性都在（含 quick 快速登录）', def.parameters.type === 'object' && def.parameters.additionalProperties === false && JSON.stringify(def.parameters.required) === JSON.stringify(['action']) && Object.keys(def.parameters.properties).length === 10 && 'quick' in def.parameters.properties, JSON.stringify({ req: def.parameters.required, props: Object.keys(def.parameters.properties) }))
 ok('输出 schema 只钉 ok/message 且 additionalProperties:true（钉死自由形状会被判 "returned invalid output"）', def.output.schema.type === 'object' && def.output.schema.additionalProperties === true && Object.keys(def.output.schema.properties).sort().join(',') === 'message,ok', JSON.stringify(def.output.schema))
 const rendered = def.output.render({}, { ok: true, image: 'att-0', nested: { a: 1 } })
 ok('回报里的图是"附件引用"而不是 base64 字段，正文那份 JSON 里不重复塞图', rendered.length === 2 && rendered[1].type === 'image' && rendered[1].attachment === 'att-0' && !('image' in JSON.parse(rendered[0].text)), JSON.stringify(rendered.map((p) => p.type)))
@@ -231,6 +238,7 @@ ok('status：最后三行日志被搬出来（窗口版没文件时也不炸，�
 /* 12. read */
 const rd = await run({ action: 'read', lines: 5 })
 ok('read：默认尾读 60 行以内、压掉框线、回报用了哪种编码与读了多少字节', rd.ok && rd.linesReturned <= 5 && rd.linesReturned >= 1 && !/█/.test(rd.text) && rd.encodingUsed === 'utf-8' && rd.bytesRead > 0, JSON.stringify({ n: rd.linesReturned, enc: rd.encodingUsed, bytes: rd.bytesRead }))
+ok('read：交出去的文本里没有 ANSI 控制码、也没有行尾 \\r（本机实测原文件是 chalk 上色 + CRLF；插件得给人干净行）', rd.ok && !rd.text.includes('\u001b') && !/\r/.test(rd.text) && rd.strippedAnsiLines >= 2, JSON.stringify({ ansi: rd.strippedAnsiLines, hasEsc: rd.text.includes('\u001b'), hasCR: /\r/.test(rd.text) }))
 const rd2 = await run({ action: 'read', filter: 'Login|txz', lines: 50 })
 ok('read：filter 走正则时只回命中行（扫码、二维码 URL、登录失败这类才是要盯的）', rd2.ok && rd2.filterMode === 'regex' && rd2.linesReturned >= 1 && rd2.text.split('\n').every((l) => /login|txz/i.test(l)), JSON.stringify({ mode: rd2.filterMode, n: rd2.linesReturned }))
 const rd3 = await run({ action: 'read', filter: '编不成[的正则', lines: 50 })
@@ -285,6 +293,13 @@ srv2.close()
 await sleep(200)
 const sp3 = await run({ action: 'stop', waitMs: 300 }, ex)
 ok('stop：本来没在跑时不谎报"停了"，直说"本来就没在跑（端口不通）"', sp3.ok && sp3.wasRunning === false && /本来就没在跑/.test(sp3.message), JSON.stringify({ was: sp3.wasRunning, msg: String(sp3.message).slice(0, 60) }))
+const sq = await run({ action: 'start', quick: '1096964640', waitMs: 0 }, ex)
+ok('start:quick 把 QQ 号转给启动器（本机实测 NapCat 支持 `NapCatWinBootMain.exe <QQ号>` 快速登录），并且写进插件自己的日志便于复盘', sq.ok && sq.alreadyRunning !== true && sq.quickLogin === '1096964640' && /快速登录=1096964640/.test(fs.readFileSync(path.join(home, 'napcat-log.log'), 'utf8')), JSON.stringify({ q: sq.quickLogin, already: sq.alreadyRunning }))
+const sqBad = await run({ action: 'start', quick: '不是号', waitMs: 3000 }, ex)
+ok('quick 形状不对（不是 5-12 位数字）就不转给命令行，照实回报 quickRejected —— 不拿任意字符串去拼 cmd', sqBad.ok && sqBad.quickLogin === '' && sqBad.quickRejected === '不是号' && /不像 QQ 号/.test(sqBad.message), JSON.stringify({ rej: sqBad.quickRejected, already: sqBad.alreadyRunning }))
+const sqAlready = await (async () => { const s0 = await openServer(toolPort); let rr; try { rr = await run({ action: 'start', quick: '123456', waitMs: 0 }, ex) } finally { s0.close() }; await sleep(200); return rr })()
+ok('已在跑时给 quick 不会偷偷生效：如实说"先 stop 再 start(quick)"（快登只在起新实例那一步有用）', sqAlready.alreadyRunning === true && sqAlready.quickLogin === '' && /先 stop/.test(sqAlready.message), JSON.stringify({ msg: String(sqAlready.message).slice(-50) }))
+await sleep(300)
 const sr = await run({ action: 'restart', waitMs: 0 }, ex)
 ok('restart：没在跑时跳过"先停"直接起（不去杀不存在的东西），起法仍走脱管', sr.ok && sr.stopReport == null && sr.detached === true && sr.totalCallMs < 1500, JSON.stringify({ stop: sr.stopReport, ms: sr.totalCallMs }))
 const bad = await run({ action: '瞎点' })
@@ -342,7 +357,7 @@ ok('每个 JSON 化的回报里都不出现本机真实家目录（C:\\Users\\..
 for (const d of disposers) d()
 ok('卸载：disposer 能把 skill 提供方摘掉（provider 被标记关闭），且不抛', skillsProviders.length === 1 && skillsProviders[0].__closed === true, JSON.stringify(skillsProviders.map((p) => !!p.__closed)))
 const ownLog = fs.readFileSync(path.join(home, 'napcat-log.log'), 'utf8')
-ok('本插件日志记了每次 start/stop 实际发的命令（谁起的、用哪只脚本，出事能复盘）', /start（mode=log）脱管发出/.test(ownLog) && /stop 脱管发出/.test(ownLog), JSON.stringify(ownLog.split('\n').slice(-3, -1)))
+ok('本插件日志记了每次 start/stop 实际发的命令（谁起的、用哪只脚本、有没有带快速登录号，出事能复盘）', /start（mode=log/.test(ownLog) && /脱管发出/.test(ownLog) && /stop 脱管发出/.test(ownLog), JSON.stringify(ownLog.split('\n').slice(-3, -1)))
 try { fs.rmSync(tmp, { recursive: true, force: true }) } catch { /* 收尾删不掉就算了 */ }
 console.log('\ndsh-napcat-log 离线自检：' + pass + ' 项通过' + (fail ? '，' + fail + ' 项失败' : '') + (skipped ? '，' + skipped + ' 项跳过' : ''))
 console.log(fail ? 'SOME FAIL' : 'ALL PASS')

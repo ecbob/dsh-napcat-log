@@ -30,9 +30,10 @@ napcat_log {
   filter?:   string,                // read：正则优先、子串兜底（都不区分大小写）
   sinceMin?: number,                // read：只看最近 N 分钟的行（按行首时间戳）
   encoding?: "auto" | "utf8" | "gbk",
-  raw?:      boolean,               // read：不压二维码框线与空行
+  raw?:      boolean,               // read：不压二维码框线与空行（ANSI 颜色码总是剥掉）
   save?:     boolean,               // qr：默认 true 落 logs/<snapshotName>
-  waitMs?:   number                 // start/stop：起停后最多再等这么久看端口变化（0 = 纯脱管）
+  waitMs?:   number,                // start/stop：起停后最多再等这么久看端口变化（0 = 纯脱管）
+  quick?:    string                 // start/restart：要快速登录的 QQ 号（5-12 位数字，转给启动器；会话不在就照旧出码）
 }
 ```
 

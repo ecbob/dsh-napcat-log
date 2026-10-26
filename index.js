@@ -160,12 +160,15 @@ export function __readTextTail(file, maxBytes, wantEncoding) {
   } finally { if (fd != null) { try { fs.closeSync(fd) } catch { /* 已经关了 */ } } }
 }
 
-/** 行筛选：filter 能编成正则就按正则、不能就当子串；raw=false 时压掉二维码 ASCII 框线（NapCat 用的是 █▄▀ 三种块字符）并把连续空行压成一行；sinceMin 按行首时间戳筛。 */
+/** 行筛选：先剥掉 ANSI 颜色控制码（NapCat 用 chalk 上色，本机实测日志里全是 \u001b[32m 这类码，留着会把 filter 的正则和给人看的文本一起弄脏）；raw=false 时压掉二维码 ASCII 框线（NapCat 用的是 █▄▀ 三种块字符）并把连续空行压成一行；filter 能编成正则就按正则、不能就当子串；sinceMin 按行首时间戳筛。 */
 export function __filterLines(text, { filter, raw, lines, sinceMin, now } = {}) {
-  const all = String(text ?? '').split(/\r?\n/)
-  const isBoxOnly = (l) => /[█▄▀]/.test(l) && /^[\s█▄▀]*$/.test(l)
-  let keep = raw === true ? all.slice() : all.filter((l) => !isBoxOnly(l))
-  let droppedShape = all.length - keep.length
+  const ansi = /\u001b\[[0-9;]*[A-Za-z]/g
+  const hasAnsi = /\u001b\[[0-9;]*[A-Za-z]/          // 不带 g 的那份用来数（带 g 的 .test 会挪 lastIndex，数出来会跳）
+  const all = String(text ?? '').split(/\r?\n/).map((l) => l.replace(/\r$/, ''))
+  const strippedAnsiLines = all.reduce((n, l) => n + (hasAnsi.test(l) ? 1 : 0), 0)
+  const clean = strippedAnsiLines ? all.map((l) => l.replace(ansi, '')) : all
+  let keep = raw === true ? clean.slice() : clean.filter((l) => !(/[█▄▀]/.test(l) && /^[\s█▄▀]*$/.test(l)))
+  let droppedShape = clean.length - keep.length
   if (raw !== true) {   // 连续空行压成一行：NapCat 每轮换码都甩一串空行，全留着会把有用的行挤出去
     const sq = []
     let prevBlank = false
@@ -189,7 +192,7 @@ export function __filterLines(text, { filter, raw, lines, sinceMin, now } = {}) 
   }
   const n = Math.max(1, Math.min(2000, Number(lines) || 60))
   const out = keep.slice(-n)
-  return { text: out.join('\n'), count: out.length, scanned: all.length, droppedBoxOrBlank: droppedShape, filterMode: mode, capped: keep.length > out.length }
+  return { text: out.join('\n'), count: out.length, scanned: clean.length, droppedBoxOrBlank: droppedShape, strippedAnsiLines, filterMode: mode, capped: keep.length > out.length }
 }
 
 /** 解 NapCat 日志行首的 `10-27 06:47:51`（没有年份、毫秒都不给）；拿当前时间补年份，补出来是未来就退一年（跨年时会发生）。 */
@@ -377,9 +380,10 @@ export function apply(ctx, config = {}) {
         filter: str('read：行过滤。能编成正则就按正则（不区分大小写），编不成就当子串包含。'),
         sinceMin: { type: 'number', description: 'read：只保留行首时间戳在最近 N 分钟内的行（按 NapCat 的 `MM-DD HH:MM:SS` 前缀解，年份由当前时间补）' },
         encoding: str('read：utf8 | gbk | auto（默认 auto：先 UTF-8，出现替换符再换 GBK，并回报用了哪种）'),
-        raw: { type: 'boolean', description: 'read：true 时不压掉二维码 ASCII 框线和空行（原样给）' },
+        raw: { type: 'boolean', description: 'read：true 时连二维码 ASCII 框线与连续空行也留下（ANSI 颜色码无论如何都剥掉，那是控制码不是内容）' },
         save: { type: 'boolean', description: 'qr：false 时只报不落盘（默认 true：复制成 logs/<snapshotName>）' },
-        waitMs: { type: 'number', description: 'start/stop：起停后最多再等这么久看端口变化（起默认 6000、停默认 4000；给 0 就纯脱管立刻回）' }
+        waitMs: { type: 'number', description: 'start/stop：起停后最多再等这么久看端口变化（起默认 6000、停默认 4000；给 0 就纯脱管立刻回）' },
+        quick: str('start/restart 用：要快速登录的 QQ 号（原样转给 NapCatWinBootMain.exe）。前提是这台机器上这个号已成功登录过一次、会话还在 —— 日志里"可用于快速登录 of QQ："那一段列的就是可用号。')
       }
     },
     output: { schema: outObj(), render: (a, v) => __renderWithImages(v) }
@@ -392,7 +396,7 @@ export function apply(ctx, config = {}) {
     const f = __filterLines(r.text, { filter: a.filter, raw: a.raw === true, lines: a.lines, sinceMin: a.sinceMin, now: new Date() })
     return {
       ok: true, action: 'read', file: L.logFile, bytesRead: r.bytes, fileSize: r.size, encodingUsed: r.encoding, fellBack: r.fellBack === true, triedEncodings: r.tried,
-      truncatedTail: r.truncated === true, droppedBoxOrBlankLines: f.droppedBoxOrBlank, filterMode: f.filterMode, cappedAtLines: f.capped, linesReturned: f.count,
+      truncatedTail: r.truncated === true, droppedBoxOrBlankLines: f.droppedBoxOrBlank, strippedAnsiLines: f.strippedAnsiLines, filterMode: f.filterMode, cappedAtLines: f.capped, linesReturned: f.count,
       text: f.text, message: f.count ? '' : '（筛选后没有行；' + (f.scanned ? '原文件有 ' + f.scanned + ' 行' : '文件是空的') + '）'
     }
   }
@@ -471,22 +475,25 @@ export function apply(ctx, config = {}) {
       if (!stopped.portClosed) return { ok: false, code: 'still_running', message: 'restart 想先停但没停掉（端口还通着）；先手动处理再试。', stopReport: stopped }
     }
     if (verb === 'start' && already) {
-      return { ok: true, action: 'start', alreadyRunning: true, portOpen: true, mode, webui: w.url, message: '已经在跑了（端口 ' + w.port + ' 通着），这次没再起一份 —— 同一目录起两份 QQ 会互相顶掉（实测：后起的那一份把前一份顶成 Process exited.）。' }
+      return { ok: true, action: 'start', alreadyRunning: true, portOpen: true, mode, quickLogin: '', webui: w.url, message: '已经在跑了（端口 ' + w.port + ' 通着），这次没再起一份 —— 同一目录起两份 QQ 会互相顶掉（实测：后起的那一份把前一份顶成 Process exited.）。' + (String(a.quick ?? '').trim() ? ' 你要的快速登录没用上：先 stop 再 start(quick:"…")。' : '') }
     }
     const t0 = Date.now()
+    const qraw = String(a.quick ?? '').trim()
+    const quick = /^\d{5,12}$/.test(qraw) ? qraw : ''      // 形状不对就当没给（不拿任意字符串去拼命令行，免得给人当注入面）
     const launcher = pickLauncher(mode, L)
+    const extra = quick ? ' ' + quick : ''
     let spawned
-    if (launcher.kind === 'bat') spawned = __spawnDetached(process.env.ComSpec || 'cmd.exe', ['/c', launcher.cmd], { cwd: L.dir, mode })
-    else spawned = __spawnDetached(process.env.ComSpec || 'cmd.exe', ['/c', 'cd /d "' + L.shellDir + '" & NapCatWinBootMain.exe' + (mode === 'log' ? ' > "' + L.logFile + '" 2> "' + L.errFile + '"' : '')], { cwd: L.shellDir, mode })
-    log(verb + '（mode=' + mode + '）脱管发出：' + spawned.command + ' pid=' + spawned.pid)
+    if (launcher.kind === 'bat') spawned = __spawnDetached(process.env.ComSpec || 'cmd.exe', ['/c', '"' + launcher.cmd + '"' + extra], { cwd: L.dir, mode })
+    else spawned = __spawnDetached(process.env.ComSpec || 'cmd.exe', ['/c', 'cd /d "' + L.shellDir + '" & NapCatWinBootMain.exe' + extra + (mode === 'log' ? ' > "' + L.logFile + '" 2> "' + L.errFile + '"' : '')], { cwd: L.shellDir, mode })
+    log(verb + '（mode=' + mode + (quick ? ' 快速登录=' + quick : '') + '）脱管发出：' + spawned.command + ' pid=' + spawned.pid)
     const probeBudget = a.waitMs != null ? Math.max(0, Math.min(60000, Number(a.waitMs) || 0)) : (mode === 'log' ? c.startProbeMs : 0)
     const port = probeBudget > 0 ? await waitPort(w.probeHost, w.port, true, probeBudget) : { open: await __portOpen(w.probeHost, w.port, 400), waitedMs: 0 }
     const waitedMs = Date.now() - t0
     return {
-      ok: true, action: verb, mode, commandUsed: launcher.kind === 'bat' ? launcher.cmd : '（没有 ' + (mode === 'console' ? 'start-console.bat' : 'start-log.bat') + '，退回直接起 NapCatWinBootMain.exe）',
+      ok: true, action: verb, mode, quickLogin: quick, quickRejected: (qraw && !quick) ? qraw : '', commandUsed: launcher.kind === 'bat' ? launcher.cmd : '（没有 ' + (mode === 'console' ? 'start-console.bat' : 'start-log.bat') + '，退回直接起 NapCatWinBootMain.exe）',
       spawnedPid: spawned.pid, detached: true, portOpenAfter: port.open, waitedForPortMs: port.waitedMs, totalCallMs: waitedMs,
       logFile: mode === 'log' ? L.logFile : '', qrcodeSource: L.qrSrc, webui: w.url, stopReport: stopped || undefined,
-      message: (port.open ? '起来了（端口 ' + w.port + ' 通着）' : '命令已脱管发出，但端口 ' + w.port + ' 还没通（' + waitedMs + 'ms 内）—— 首次起要解 QQ 与注入，慢是正常的，再问一次 status') + '；调用侧没被拖住：' + waitedMs + 'ms' + (mode === 'console' ? '；窗口模式的日志不进文件，只在它自己的控制台里' : '；日志在 ' + L.logFile)
+      message: (port.open ? '起来了（端口 ' + w.port + ' 通着）' : '命令已脱管发出，但端口 ' + w.port + ' 还没通（' + waitedMs + 'ms 内）—— 首次起要解 QQ 与注入，慢是正常的，再问一次 status') + '；调用侧没被拖住：' + waitedMs + 'ms' + (mode === 'console' ? '；窗口模式的日志不进文件，只在它自己的控制台里' : '；日志在 ' + L.logFile) + (quick ? '；已把 ' + quick + ' 转给启动器做快速登录（会话还在就免扫码，不在就照旧出二维码，用 read 看登录那几行）' : '') + (qraw && !quick ? '；quick 值「' + qraw + '」不像 QQ 号（要 5-12 位数字），这次没转给它' : '')
     }
   }
   const doStop = async (c, L, w, waitMs) => {

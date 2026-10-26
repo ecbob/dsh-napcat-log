@@ -21,17 +21,20 @@ whenToUse: 要判断 NapCat 在不在跑、看它的登录/扫码/OneBot 事件�
 
 ```
 napcat_log {action:"status"}                                  # 在不在跑 / 哪种模式 / WebUI 地址+token / 当前码剩多少秒 / 用的是哪个目录
-napcat_log {action:"read", lines:60}                          # 尾读 60 行（默认压掉二维码 ASCII 框线）
+napcat_log {action:"read", lines:60}                          # 尾读 60 行（默认压掉二维码 ASCII 框线；ANSI 颜色码总是剥掉，那是控制码不是内容）
 napcat_log {action:"read", filter:"Login|扫码|二维码|OneBot"}  # 能编成正则就按正则（不区分大小写），编不成就当子串
-napcat_log {action:"read", sinceMin:10, raw:true}             # 最近 10 分钟的行，原样给（连框线都不压）
+napcat_log {action:"read", sinceMin:10, raw:true}             # 最近 10 分钟的行，连框线和空行也不压
 napcat_log {action:"read", encoding:"gbk"}                    # 这台机器上同类目录里也有 GBK 的东西；默认 auto 会自动判并回报 encodingUsed
 napcat_log {action:"qr"}                                      # 把当前登录码快照成 logs/qrcode-latest.png，并把图当附件回会话
 napcat_log {action:"qr", save:false}                          # 只问不落盘
 napcat_log {action:"start"}                                   # 脱管起（立刻返回，不等 NapCat 退出）
 napcat_log {action:"start", mode:"console"}                   # 开可见窗口的起法（日志不进文件）
+napcat_log {action:"start", quick:"123456789"}                # 快速登录：把 QQ 号转给启动器（会话还在就免扫码；不在就照旧出码）
 napcat_log {action:"stop"}                                    # 只停这个目录底下的那份
 napcat_log {action:"restart"}                                 # 先停再起（停不干净会如实回 still_running）
 ```
+
+**快速登录的前提**：日志里那一行 `可用于快速登录 of QQ：` 后面列的号，才是这台机器上"有会话可快登"的号；`quick` 只接受 5-12 位数字（不像就不转，回报里写 `quickRejected`）。已在跑时给 `quick` 不会生效（`start` 不叠第二份），要先 `stop` 或 `restart`。
 
 ## 三条判读口径（别误诊）
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-napcat-log",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "桥接 NapCat（QQ 机器人框架）的运行日志与登录二维码的 DSH 插件（纯 JS、零运行时依赖，只用 node 内置）：一只工具 napcat_log、六个动作 —— status（在不在跑、跑的是重定向还是窗口模式、WebUI 地址与 token、当前登录码还剩多少秒、NapCat 装在哪、怎么钉死）| read（尾读 logs/napcat-out.txt：正则或子串筛选、最近 N 分钟、UTF-8/GBK 自动判并回报用了哪种）| qr（把当前码快照成 logs/qrcode-latest.png 并当图片附件回会话）| start|restart|stop（脱管起停：stdio ignore + detached + unref，调用立刻返回，NapCat 不挂在会话或宿主底下）。它只读文件与起停进程：不发 QQ 消息、不起定时器、不加界面分区。",
   "type": "module",
   "main": "./index.js",
